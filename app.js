@@ -337,6 +337,18 @@ fileList.addEventListener('click', event => {
     disableShare(item);
     return;
   }
+  if (event.target.closest('.edit-shared-date-btn')) {
+    startEditSharedDate(item);
+    return;
+  }
+  if (event.target.closest('.save-shared-date-btn')) {
+    saveSharedDate(item);
+    return;
+  }
+  if (event.target.closest('.cancel-shared-date-btn')) {
+    cancelEditSharedDate(item);
+    return;
+  }
 
   if (event.target.closest('.edit-name-btn')) {
     startEditName(item);
@@ -381,6 +393,16 @@ fileList.addEventListener('click', event => {
     startAddTag(item);
     return;
   }
+  const suggestBtn = event.target.closest('.tag-suggest');
+  if (suggestBtn) {
+    const on = suggestBtn.classList.toggle('selected');
+    suggestBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    return;
+  }
+  if (event.target.closest('.confirm-tag-btn')) {
+    commitAddTag(item);
+    return;
+  }
   if (event.target.closest('.cancel-tag-btn')) {
     cancelAddTag(item);
     return;
@@ -396,27 +418,33 @@ fileList.addEventListener('click', event => {
   }
 });
 
-fileList.addEventListener('change', event => {
-  if (event.target.classList.contains('tag-select')) {
-    const item = event.target.closest('.file-item');
-    if (item && event.target.value) saveTag(item, event.target.value);
-  }
+fileList.addEventListener('input', event => {
+  if (event.target.classList.contains('desc-input')) autosizeTextarea(event.target);
 });
 
 fileList.addEventListener('keydown', event => {
   const item = event.target.closest('.file-item');
   if (!item) return;
+  if (event.target.classList.contains('tag-input')) {
+    if (event.key === 'Enter') { event.preventDefault(); commitAddTag(item); }
+    if (event.key === 'Escape') cancelAddTag(item);
+  }
   if (event.target.classList.contains('name-input')) {
     if (event.key === 'Enter') saveName(item);
     if (event.key === 'Escape') cancelEditName(item);
   }
   if (event.target.classList.contains('desc-input')) {
-    if (event.key === 'Enter') saveDesc(item);
+    // Enter inserts a newline (multi-line descriptions); Cmd/Ctrl+Enter saves.
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) saveDesc(item);
     if (event.key === 'Escape') cancelEditDesc(item);
   }
   if (event.target.classList.contains('filmed-date-input')) {
     if (event.key === 'Enter') saveFilmedDate(item);
     if (event.key === 'Escape') cancelEditFilmedDate(item);
+  }
+  if (event.target.classList.contains('shared-date-input')) {
+    if (event.key === 'Enter') saveSharedDate(item);
+    if (event.key === 'Escape') cancelEditSharedDate(item);
   }
 });
 
@@ -469,11 +497,12 @@ function sharedAreaInnerHtml(shared, lastSharedRaw) {
   } else {
     info = '<small class="shared-info muted">Never shared</small>';
   }
+  const editDate = '<button class="edit-shared-date-btn" title="Edit last shared date">&#9998;</button>';
   const copy = '<button class="copy-link-btn" title="Copy view link">&#128279; Copy link</button>';
   const toggle = shared
     ? '<button class="disable-share-btn" title="Stop sharing the public link">Stop sharing</button>'
     : '<button class="share-btn" title="Create a public view link">&#8599; Share</button>';
-  return `${badge}${info}${copy}${toggle}`;
+  return `${badge}${info}${editDate}${copy}${toggle}`;
 }
 
 // Initial render straight from the file object.
@@ -672,18 +701,74 @@ async function saveFilmedDate(item) {
   }
 }
 
+// Local YYYY-MM-DD for prefilling a date input, derived from a stored ISO string.
+function isoToDateInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function startEditSharedDate(item) {
+  const area = item.querySelector('.shared-area');
+  const current = isoToDateInput(parseLastSharedStr(item.dataset.lastShared || '').iso);
+  area.innerHTML = `<input class="shared-date-input" type="date" value="${escapeHtml(current)}">
+      <button class="save-shared-date-btn">Save</button>
+      <button class="cancel-shared-date-btn outline secondary">Cancel</button>`;
+  area.querySelector('.shared-date-input').focus();
+}
+
+function cancelEditSharedDate(item) {
+  renderSharedArea(item);
+}
+
+async function saveSharedDate(item) {
+  const area = item.querySelector('.shared-area');
+  const input = area.querySelector('.shared-date-input');
+  // Anchor to local noon so the calendar date survives timezone conversion on display.
+  const newIso = input.value ? new Date(`${input.value}T12:00:00`).toISOString() : '';
+  const { email } = parseLastSharedStr(item.dataset.lastShared || '');
+  const newRaw = newIso ? (email ? `${email}|${newIso}` : newIso) : '';
+  input.disabled = true;
+  area.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${item.dataset.id}`, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appProperties: { last_shared: newRaw } }),
+    });
+    if (!resp.ok) throw new Error('Save failed (' + resp.status + ')');
+    item.dataset.lastShared = newRaw;
+    renderSharedArea(item);
+    flashSaved(item);
+  } catch (err) {
+    showError('Failed to save last shared date: ' + err.message);
+    renderSharedArea(item);
+  }
+}
+
 function descAreaHtml(text) {
   return `<small class="file-desc">${escapeHtml(text)}</small>
       <button class="edit-desc-btn" title="Edit description">&#9998;</button>`;
 }
 
+// Grow a textarea to fit its content so the whole description is visible while editing.
+function autosizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
 function startEditDesc(item) {
   const descArea = item.querySelector('.desc-area');
   const current = item.dataset.desc || '';
-  descArea.innerHTML = `<input class="desc-input" type="text" value="${escapeHtml(current)}" placeholder="Add a description…">
+  descArea.innerHTML = `<textarea class="desc-input" rows="1" placeholder="Add a description…">${escapeHtml(current)}</textarea>
       <button class="save-desc-btn">Save</button>
       <button class="cancel-desc-btn outline secondary">Cancel</button>`;
-  descArea.querySelector('.desc-input').focus();
+  const input = descArea.querySelector('.desc-input');
+  input.focus();
+  autosizeTextarea(input);
 }
 
 function cancelEditDesc(item) {
@@ -767,30 +852,47 @@ function tagsAreaHtml(tags) {
 function startAddTag(item) {
   const area = item.querySelector('.tags-area');
   const current = parseTags(item.dataset.tags);
-  const available = (typeof AVAILABLE_TAGS !== 'undefined' ? AVAILABLE_TAGS : [])
-    .filter(t => !current.includes(t));
+  // Suggest existing tags (the union across videos) that aren't already on this video,
+  // but let the user type a brand-new tag to create it.
+  const available = availableTags().filter(t => !current.includes(t));
   const chips = current.map(tagChipHtml).join('');
-  if (!available.length) {
-    area.innerHTML = `${chips}<small class="all-tags-note">All tags added</small>
-      <button class="cancel-tag-btn outline secondary">Done</button>`;
+  const suggestions = available.length
+    ? `<div class="tag-suggest-row">${available
+        .map(t => `<button class="tag-suggest" data-tag="${escapeHtml(t)}" aria-pressed="false">${escapeHtml(t)}</button>`)
+        .join('')}</div>`
+    : '';
+  area.innerHTML = `${chips}<input class="tag-input" placeholder="New tag…" autocomplete="off">
+      <button class="confirm-tag-btn outline">Add</button>
+      <button class="cancel-tag-btn outline secondary">Cancel</button>
+      ${suggestions}`;
+  area.querySelector('.tag-input').focus();
+}
+
+// Trim and drop commas (the storage delimiter); returns '' for empty input.
+function sanitizeTag(value) {
+  return (value || '').replace(/,/g, '').trim();
+}
+
+// Apply every selected suggestion chip plus any newly typed tag name, in one save.
+function commitAddTag(item) {
+  const area = item.querySelector('.tags-area');
+  const merged = parseTags(item.dataset.tags);
+  const startLen = merged.length;
+  area.querySelectorAll('.tag-suggest.selected').forEach(btn => {
+    if (!merged.includes(btn.dataset.tag)) merged.push(btn.dataset.tag);
+  });
+  const input = area.querySelector('.tag-input');
+  const typed = input ? sanitizeTag(input.value) : '';
+  if (typed && !merged.includes(typed)) merged.push(typed);
+  if (merged.length === startLen) {
+    cancelAddTag(item);
     return;
   }
-  const options = ['<option value="">Add tag…</option>']
-    .concat(available.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`))
-    .join('');
-  area.innerHTML = `${chips}<select class="tag-select">${options}</select>
-      <button class="cancel-tag-btn outline secondary">Cancel</button>`;
-  area.querySelector('.tag-select').focus();
+  patchTags(item, merged);
 }
 
 function cancelAddTag(item) {
   item.querySelector('.tags-area').innerHTML = tagsAreaHtml(parseTags(item.dataset.tags));
-}
-
-async function saveTag(item, tag) {
-  const merged = parseTags(item.dataset.tags);
-  if (!merged.includes(tag)) merged.push(tag);
-  await patchTags(item, merged);
 }
 
 async function removeTag(item, tag) {
@@ -809,8 +911,13 @@ async function patchTags(item, tags) {
     });
     if (!resp.ok) throw new Error('Save failed (' + resp.status + ')');
     item.dataset.tags = serializeTags(tags);
+    // Keep allFiles in sync so the derived tag set is correct and a later renderList()
+    // (e.g. re-sort) doesn't revert this edit from stale data.
+    const f = allFiles.find(f => f.id === item.dataset.id);
+    if (f) f.appProperties = { ...(f.appProperties || {}), tags: serializeTags(tags) };
     area.innerHTML = tagsAreaHtml(tags);
     flashSaved(item);
+    renderTagBar();
     applyFilter();
   } catch (err) {
     showError('Failed to update tags: ' + err.message);
@@ -818,8 +925,19 @@ async function patchTags(item, tags) {
   }
 }
 
+// The available tag set is derived from the videos themselves: the union of every tag
+// applied to any loaded file. There is no persistent tag registry.
+function availableTags() {
+  const set = new Set();
+  for (const f of allFiles) for (const t of parseTags(f.appProperties?.tags)) set.add(t);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
 function renderTagBar() {
-  const tags = typeof AVAILABLE_TAGS !== 'undefined' ? AVAILABLE_TAGS : [];
+  const tags = availableTags();
+  // Drop any active filter whose tag no longer exists, so a removed tag can't leave the
+  // list filtered down to nothing.
+  for (const t of [...activeFilters]) if (!tags.includes(t)) activeFilters.delete(t);
   if (!tags.length) {
     tagFilterBar.hidden = true;
     tagFilterBar.innerHTML = '';

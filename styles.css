@@ -229,9 +229,9 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 
 .file-desc {
   color: var(--pico-muted-color);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .name-area {
@@ -365,7 +365,8 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
   font-style: italic;
 }
 
-.edit-filmed-date-btn {
+.edit-filmed-date-btn,
+.edit-shared-date-btn {
   background: none;
   border: none;
   padding: 0 0.2rem;
@@ -379,13 +380,15 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
   flex-shrink: 0;
 }
 
-.edit-filmed-date-btn:hover {
+.edit-filmed-date-btn:hover,
+.edit-shared-date-btn:hover {
   opacity: 1;
   color: var(--pico-primary);
   background: none;
 }
 
-.filmed-date-input {
+.filmed-date-input,
+.shared-date-input {
   font-size: 0.8rem;
   padding: 0.15rem 0.4rem;
   margin: 0;
@@ -394,7 +397,9 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 }
 
 .save-filmed-date-btn,
-.cancel-filmed-date-btn {
+.cancel-filmed-date-btn,
+.save-shared-date-btn,
+.cancel-shared-date-btn {
   font-size: 0.75rem;
   padding: 0.15rem 0.5rem;
   margin: 0;
@@ -471,7 +476,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 
 .desc-area {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.35rem;
   min-height: 1.4rem;
 }
@@ -499,10 +504,13 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 .desc-input {
   flex: 1;
   font-size: 0.8rem;
+  line-height: 1.4;
   padding: 0.15rem 0.4rem;
   margin: 0;
   height: auto;
   min-width: 0;
+  resize: none;
+  overflow: hidden;
 }
 
 .save-desc-btn,
@@ -575,27 +583,60 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
   background: none;
 }
 
-.tag-select {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.4rem;
+/* Selector intentionally more specific than Pico's `input:not([type=…])` reset
+   so our compact sizing wins over Pico's full-width, tall default. */
+.tags-area .tag-input {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 0.15rem 0.4rem;
   margin: 0;
-  width: auto;
   height: auto;
-  min-width: 8rem;
+  width: 8rem;
 }
 
-.cancel-tag-btn {
+/* Existing tags offered as clickable suggestions, on their own wrapping row. */
+.tag-suggest-row {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.1rem;
+}
+
+.tag-suggest {
+  background: none;
+  border: 1px dashed var(--pico-muted-border-color);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  margin: 0;
+  width: auto;
+  font-size: 0.72rem;
+  color: var(--pico-muted-color);
+  cursor: pointer;
+}
+
+.tag-suggest:hover {
+  color: var(--pico-primary);
+  border-color: var(--pico-primary);
+  background: none;
+}
+
+.tag-suggest.selected,
+.tag-suggest.selected:hover {
+  border-style: solid;
+  border-color: var(--pico-primary);
+  background: var(--pico-primary);
+  color: #fff;
+}
+
+.cancel-tag-btn,
+.confirm-tag-btn {
   font-size: 0.75rem;
   padding: 0.15rem 0.5rem;
   margin: 0;
   width: auto;
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.all-tags-note {
-  color: var(--pico-muted-color);
-  font-size: 0.75rem;
 }
 
 /* ── Top tag filter bar ── */
@@ -639,6 +680,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 .edit-name-btn,
 .edit-desc-btn,
 .edit-filmed-date-btn,
+.edit-shared-date-btn,
 .share-btn,
 .copy-link-btn {
   transition: opacity 0.15s, color 0.15s;
@@ -647,12 +689,14 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 .file-item:hover .edit-name-btn,
 .file-item:hover .edit-desc-btn,
 .file-item:hover .edit-filmed-date-btn,
+.file-item:hover .edit-shared-date-btn,
 .file-item:hover .share-btn,
 .file-item:hover .copy-link-btn,
 .file-item:hover .disable-share-btn,
 .file-item:focus-within .edit-name-btn,
 .file-item:focus-within .edit-desc-btn,
 .file-item:focus-within .edit-filmed-date-btn,
+.file-item:focus-within .edit-shared-date-btn,
 .file-item:focus-within .share-btn,
 .file-item:focus-within .copy-link-btn,
 .file-item:focus-within .disable-share-btn {
@@ -664,6 +708,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
   .edit-name-btn,
   .edit-desc-btn,
   .edit-filmed-date-btn,
+  .edit-shared-date-btn,
   .share-btn,
   .copy-link-btn,
   .disable-share-btn {
@@ -675,7 +720,8 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 .name-input,
 .desc-input,
 .filmed-date-input,
-.tag-select {
+.shared-date-input,
+.tag-input {
   border-radius: 8px;
   border: 1px solid var(--pico-muted-border-color);
   background: #fff;
@@ -684,17 +730,14 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 .name-input:focus,
 .desc-input:focus,
 .filmed-date-input:focus,
-.tag-select:focus,
+.shared-date-input:focus,
+.tag-input:focus,
 .search-input:focus {
   outline: none;
   border-color: var(--pico-primary);
   box-shadow: 0 0 0 3px var(--pico-primary-focus);
 }
 
-.tag-select {
-  border-radius: 999px;
-  padding-right: 1.6rem;
-}
 
 /* ── List toolbar: search + sort ── */
 .list-toolbar {
