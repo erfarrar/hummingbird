@@ -6,8 +6,17 @@ They upload their class recordings to Google Drive, and they want a custom appli
   `video/*` MIME type). If the folder contains non-video, non-folder files, a
   warning strip is shown at the top of the list.
 - Ability to view, and edit the recording/filmed date
-- The ability to apply custom tags to videos, and filter for those tags (intersection)
+- The ability to apply custom tags to videos, and filter for those tags (selecting
+  multiple filters narrows to videos matching all of them — intersection).
+  - Tags are user-managed, not configured in code. There is no separate persistent tag
+    list: the set of available tags is derived from the videos themselves — the union of
+    every tag currently applied to any video. A new tag becomes available as soon as it is
+    applied to a video, and disappears from the set once no video uses it.
+  - When adding tags to a video, the user can select any number of the existing tags at
+    once and/or type a brand-new tag name to create it, then apply them all together.
+  - Tags are removed per-video (no global delete).
 - Quick view of the title and description, and a quick way to edit them inline.
+  Descriptions can span multiple lines; the inline editor expands to fit the text.
 - Ability to view the video duration
 
 Video folder selection:
@@ -27,7 +36,8 @@ Sharing:
 - Sharing grants view-only access — viewers can watch but cannot download, print, or copy
   the video.
 - Shared videos are clearly indicated in the UI (a "Shared" badge).
-- The "Last shared" indicator shows the date the link was last enabled.
+- The "Last shared" indicator shows the date the link was last enabled, and can be
+  manually edited inline if it needs correcting.
 - An easy way to see only the videos that are currently shared (a "Shared only" filter).
 - A way to copy the video's share link to send out. The link grants view-only access while
   sharing is enabled, and stops working once sharing is disabled.

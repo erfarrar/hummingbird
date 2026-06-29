@@ -501,7 +501,8 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
   background: none;
 }
 
-.desc-input {
+.desc-input,
+.detail-input {
   flex: 1;
   font-size: 0.8rem;
   line-height: 1.4;
@@ -514,7 +515,9 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 }
 
 .save-desc-btn,
-.cancel-desc-btn {
+.cancel-desc-btn,
+.save-detail-btn,
+.cancel-detail-btn {
   font-size: 0.75rem;
   padding: 0.15rem 0.5rem;
   margin: 0;
@@ -522,6 +525,79 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ── "More details": Equipment & Notes ── */
+.details-area {
+  margin-top: 0.15rem;
+}
+
+.details-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  width: auto;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--pico-muted-color);
+  cursor: pointer;
+}
+
+.details-toggle:hover {
+  background: none;
+  color: var(--pico-primary);
+}
+
+.details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.detail-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-height: 1.4rem;
+}
+
+.detail-label {
+  flex-shrink: 0;
+  min-width: 5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--pico-muted-color);
+}
+
+.detail-value {
+  flex: 1;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.edit-detail-btn {
+  background: none;
+  border: none;
+  padding: 0 0.2rem;
+  margin: 0;
+  width: auto;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--pico-muted-color);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.edit-detail-btn:hover {
+  opacity: 1;
+  color: var(--pico-primary);
+  background: none;
+}
+
 
 /* ── Per-row tags ── */
 .tags-area {
@@ -679,6 +755,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 /* ── Reveal edit/share affordances on hover or keyboard focus ── */
 .edit-name-btn,
 .edit-desc-btn,
+.edit-detail-btn,
 .edit-filmed-date-btn,
 .edit-shared-date-btn,
 .share-btn,
@@ -688,6 +765,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 
 .file-item:hover .edit-name-btn,
 .file-item:hover .edit-desc-btn,
+.file-item:hover .edit-detail-btn,
 .file-item:hover .edit-filmed-date-btn,
 .file-item:hover .edit-shared-date-btn,
 .file-item:hover .share-btn,
@@ -695,6 +773,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 .file-item:hover .disable-share-btn,
 .file-item:focus-within .edit-name-btn,
 .file-item:focus-within .edit-desc-btn,
+.file-item:focus-within .edit-detail-btn,
 .file-item:focus-within .edit-filmed-date-btn,
 .file-item:focus-within .edit-shared-date-btn,
 .file-item:focus-within .share-btn,
@@ -707,6 +786,7 @@ header nav:has(#signed-in-area[hidden]) ul:first-child {
 @media (hover: none) {
   .edit-name-btn,
   .edit-desc-btn,
+  .edit-detail-btn,
   .edit-filmed-date-btn,
   .edit-shared-date-btn,
   .share-btn,

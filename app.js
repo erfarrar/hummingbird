@@ -190,6 +190,7 @@ async function listFiles() {
   listToolbar.hidden = !allFiles.length;
   renderList();
   renderTagBar();
+  migrateTags();
 }
 
 // Sort comparator for the current sort mode.
@@ -249,14 +250,17 @@ function renderFiles(files) {
       ? `<img class="file-thumb" src="${thumbSrc}" alt="" referrerpolicy="no-referrer" onerror="handleThumbError(this)">`
       : `<span class="file-icon">${icon}</span>`;
     const thumb = `<div class="thumb-wrap">${thumbInner}<span class="play-btn" aria-hidden="true">&#9654;</span></div>`;
-    const descText = file.description || '';
+    const meta = fileMeta(file);
+    const descText = meta.description;
     const desc = `<div class="desc-area">
         <small class="file-desc">${escapeHtml(descText)}</small>
         <button class="edit-desc-btn" title="Edit description">&#9998;</button>
       </div>`;
-    const tags = parseTags(file.appProperties?.tags);
+    const tags = meta.tags;
+    const equipment = meta.equipment;
+    const notes = meta.notes;
     const share = publicShare(file);
-    return `<li class="file-item" data-id="${file.id}" data-name="${escapeHtml(file.name)}" data-desc="${escapeHtml(descText)}" data-shared="${share ? '1' : '0'}" data-share-perm="${share ? escapeHtml(share.permId) : ''}" data-last-shared="${escapeHtml(lastSharedRawFor(file))}" data-tags="${escapeHtml(tags.join(','))}" data-date-filmed="${escapeHtml(dateFilmed)}">
+    return `<li class="file-item" data-id="${file.id}" data-name="${escapeHtml(file.name)}" data-desc="${escapeHtml(descText)}" data-shared="${share ? '1' : '0'}" data-share-perm="${share ? escapeHtml(share.permId) : ''}" data-last-shared="${escapeHtml(lastSharedRawFor(file))}" data-tags="${escapeHtml(tags.join(','))}" data-date-filmed="${escapeHtml(dateFilmed)}" data-equipment="${escapeHtml(equipment)}" data-notes="${escapeHtml(notes)}">
       <div class="file-row">
         ${thumb}
         <div class="file-info">
@@ -267,6 +271,7 @@ function renderFiles(files) {
           ${desc}
           <div class="tags-area">${tagsAreaHtml(tags)}</div>
           <div class="shared-area">${sharedAreaHtml(file)}</div>
+          ${detailsHtml(equipment, notes)}
         </div>
         <div class="file-meta">
           ${duration ? `<span class="file-duration">${duration}</span>` : ''}
@@ -376,6 +381,26 @@ fileList.addEventListener('click', event => {
     return;
   }
 
+  if (event.target.closest('.details-toggle')) {
+    toggleDetails(item);
+    return;
+  }
+  const editDetailBtn = event.target.closest('.edit-detail-btn');
+  if (editDetailBtn) {
+    startEditDetail(item, editDetailBtn.closest('.detail-field').dataset.field);
+    return;
+  }
+  const saveDetailBtn = event.target.closest('.save-detail-btn');
+  if (saveDetailBtn) {
+    saveDetail(item, saveDetailBtn.closest('.detail-field').dataset.field);
+    return;
+  }
+  const cancelDetailBtn = event.target.closest('.cancel-detail-btn');
+  if (cancelDetailBtn) {
+    cancelEditDetail(item, cancelDetailBtn.closest('.detail-field').dataset.field);
+    return;
+  }
+
   if (event.target.closest('.edit-filmed-date-btn')) {
     startEditFilmedDate(item);
     return;
@@ -420,6 +445,7 @@ fileList.addEventListener('click', event => {
 
 fileList.addEventListener('input', event => {
   if (event.target.classList.contains('desc-input')) autosizeTextarea(event.target);
+  if (event.target.classList.contains('detail-input')) autosizeTextarea(event.target);
 });
 
 fileList.addEventListener('keydown', event => {
@@ -437,6 +463,12 @@ fileList.addEventListener('keydown', event => {
     // Enter inserts a newline (multi-line descriptions); Cmd/Ctrl+Enter saves.
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) saveDesc(item);
     if (event.key === 'Escape') cancelEditDesc(item);
+  }
+  if (event.target.classList.contains('detail-input')) {
+    // Multi-line fields: Enter inserts a newline, Cmd/Ctrl+Enter saves.
+    const field = event.target.dataset.field;
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) saveDetail(item, field);
+    if (event.key === 'Escape') cancelEditDetail(item, field);
   }
   if (event.target.classList.contains('filmed-date-input')) {
     if (event.key === 'Enter') saveFilmedDate(item);
@@ -782,19 +814,232 @@ async function saveDesc(item) {
   input.disabled = true;
   descArea.querySelectorAll('button').forEach(b => b.disabled = true);
   try {
-    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${item.dataset.id}`, {
-      method: 'PATCH',
-      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: newDesc }),
-    });
-    if (!resp.ok) throw new Error('Save failed (' + resp.status + ')');
-    item.dataset.desc = newDesc;
+    await patchMeta(item, { description: newDesc });
     descArea.innerHTML = descAreaHtml(newDesc);
     flashSaved(item);
+    applyFilter();
   } catch (err) {
     showError('Failed to save description: ' + err.message);
     input.disabled = false;
     descArea.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
+// ── Equipment & Notes (shown in "More details") ──
+
+const DETAIL_FIELDS = { equipment: 'Equipment', notes: 'Notes' };
+
+// Equipment/Notes/Tags would each blow past Drive's 128-byte appProperties cap, so
+// they're packed into the native `description` field (limit >25 KB) instead. The
+// human description stays on top; a trailing block of "[Label] value" lines holds
+// the rest. A value runs from its label until the next label, so it can be
+// multi-line. See parseDescription/buildDescription below.
+const META_LABELS = { '[Equipment]': 'equipment', '[Notes]': 'notes', '[Tags]': 'tags' };
+
+// Recognize a managed metadata line; returns { key, rest } or null.
+function labelOf(line) {
+  for (const label in META_LABELS) {
+    if (line === label) return { key: META_LABELS[label], rest: '' };
+    if (line.startsWith(label + ' ')) return { key: META_LABELS[label], rest: line.slice(label.length + 1) };
+  }
+  return null;
+}
+
+// Split a raw description into the human text plus the packed metadata fields.
+// The metadata block starts at the first line beginning with a known label;
+// everything before it is the description. (A description/value line that itself
+// starts with one of those labels would be misread — acceptable for this app.)
+function parseDescription(raw) {
+  const lines = (raw || '').split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (labelOf(lines[i])) { start = i; break; }
+  }
+  if (start === -1) return { description: (raw || '').trim(), equipment: '', notes: '', tags: [] };
+  const description = lines.slice(0, start).join('\n').replace(/\n+$/, '');
+  const fields = { equipment: '', notes: '', tags: '' };
+  let cur = null;
+  for (let i = start; i < lines.length; i++) {
+    const m = labelOf(lines[i]);
+    if (m) { cur = m.key; fields[cur] = m.rest; }
+    else if (cur) { fields[cur] += '\n' + lines[i]; }
+  }
+  return {
+    description,
+    equipment: fields.equipment.trim(),
+    notes: fields.notes.trim(),
+    tags: parseTags(fields.tags),
+  };
+}
+
+// Pack the four fields back into a single description string. Non-empty metadata
+// is appended as labeled lines in a fixed order; with no metadata the description
+// is returned untouched so plain files stay clean.
+function buildDescription({ description, equipment, notes, tags }) {
+  const human = (description || '').trim();
+  const parts = [];
+  if (equipment && equipment.trim()) parts.push(`[Equipment] ${equipment.trim()}`);
+  if (notes && notes.trim()) parts.push(`[Notes] ${notes.trim()}`);
+  if (tags && tags.length) parts.push(`[Tags] ${tags.join(', ')}`);
+  if (!parts.length) return human;
+  const block = parts.join('\n');
+  return human ? `${human}\n\n${block}` : block;
+}
+
+// Parsed view of a file's editable fields, with a fallback to the legacy
+// appProperties.tags for files not yet migrated by migrateTags().
+function fileMeta(file) {
+  const parsed = parseDescription(file.description);
+  if (!parsed.tags.length && file.appProperties?.tags) parsed.tags = parseTags(file.appProperties.tags);
+  return parsed;
+}
+
+// The single write path for all four packed fields. Reads the row's current
+// values from its data-* attributes, applies the given overrides, repacks them
+// into the description, and PATCHes Drive (also clearing the legacy tags
+// property). Syncs the data-* attributes and allFiles on success; throws on
+// failure so callers can surface the error and re-enable their UI.
+async function patchMeta(item, changes) {
+  const current = {
+    description: item.dataset.desc || '',
+    equipment: item.dataset.equipment || '',
+    notes: item.dataset.notes || '',
+    tags: parseTags(item.dataset.tags),
+  };
+  const next = { ...current, ...changes };
+  const raw = buildDescription(next);
+  const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${item.dataset.id}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description: raw, appProperties: { tags: null } }),
+  });
+  if (!resp.ok) throw new Error('Save failed (' + resp.status + ')');
+  item.dataset.desc = next.description;
+  item.dataset.equipment = next.equipment;
+  item.dataset.notes = next.notes;
+  item.dataset.tags = serializeTags(next.tags);
+  const f = allFiles.find(f => f.id === item.dataset.id);
+  if (f) {
+    f.description = raw;
+    if (f.appProperties && 'tags' in f.appProperties) {
+      f.appProperties = { ...f.appProperties };
+      delete f.appProperties.tags;
+    }
+  }
+}
+
+// One-time migration: fold any legacy appProperties.tags into the packed
+// description and delete the old property. Runs in the background after the list
+// renders (display already works via fileMeta's fallback). Sequential to stay
+// gentle on the Drive API; idempotent — migrated files have no tags property to
+// find on the next load.
+async function migrateTags() {
+  const token = accessToken;
+  for (const f of allFiles) {
+    if (!f.appProperties?.tags) continue;
+    if (token !== accessToken) return; // folder changed / signed out — abandon
+    const parsed = parseDescription(f.description);
+    const tags = parsed.tags.length ? parsed.tags : parseTags(f.appProperties.tags);
+    const raw = buildDescription({ ...parsed, tags });
+    try {
+      const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}`, {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: raw, appProperties: { tags: null } }),
+      });
+      if (!resp.ok) continue; // leave unmigrated; the read fallback keeps tags working
+      f.description = raw;
+      f.appProperties = { ...f.appProperties };
+      delete f.appProperties.tags;
+    } catch {
+      // Network error — skip this file; it'll be retried on the next load.
+    }
+  }
+}
+
+// The toggle label: caret reflects open state, • indicator shows when either
+// field has content (so a collapsed row still signals there's something inside).
+function detailsToggleLabel(equipment, notes, open) {
+  const caret = open ? '▾' : '▸';
+  const dot = (equipment || notes) ? ' •' : '';
+  return `${caret} More details${dot}`;
+}
+
+// The display contents of a field row: label + value + edit pencil. Returned
+// without the .detail-field wrapper so it can refresh an existing row's innerHTML.
+function detailFieldInnerHtml(field, text) {
+  return `<span class="detail-label">${DETAIL_FIELDS[field]}</span>
+        <small class="detail-value">${escapeHtml(text)}</small>
+        <button class="edit-detail-btn" title="Edit ${DETAIL_FIELDS[field].toLowerCase()}">&#9998;</button>`;
+}
+
+// A single field's row. The wrapper carries data-field so the shared click/edit
+// handlers know which property to act on.
+function detailFieldHtml(field, text) {
+  return `<div class="detail-field" data-field="${field}">${detailFieldInnerHtml(field, text)}</div>`;
+}
+
+function detailsHtml(equipment, notes) {
+  return `<div class="details-area">
+        <button class="details-toggle" aria-expanded="false">${detailsToggleLabel(equipment, notes, false)}</button>
+        <div class="details-body" hidden>
+          ${detailFieldHtml('equipment', equipment)}
+          ${detailFieldHtml('notes', notes)}
+        </div>
+      </div>`;
+}
+
+// Sync the toggle label to current content + open state (• indicator, caret).
+function refreshDetailsToggle(item) {
+  const toggle = item.querySelector('.details-toggle');
+  const body = item.querySelector('.details-body');
+  if (toggle) toggle.textContent = detailsToggleLabel(item.dataset.equipment, item.dataset.notes, !body.hidden);
+}
+
+function toggleDetails(item) {
+  const body = item.querySelector('.details-body');
+  const toggle = item.querySelector('.details-toggle');
+  body.hidden = !body.hidden;
+  toggle.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  refreshDetailsToggle(item);
+}
+
+function fieldEl(item, field) {
+  return item.querySelector(`.detail-field[data-field="${field}"]`);
+}
+
+function startEditDetail(item, field) {
+  const el = fieldEl(item, field);
+  const current = item.dataset[field] || '';
+  el.innerHTML = `<span class="detail-label">${DETAIL_FIELDS[field]}</span>
+      <textarea class="detail-input" data-field="${field}" rows="1" placeholder="Add ${DETAIL_FIELDS[field].toLowerCase()}…">${escapeHtml(current)}</textarea>
+      <button class="save-detail-btn">Save</button>
+      <button class="cancel-detail-btn outline secondary">Cancel</button>`;
+  const input = el.querySelector('.detail-input');
+  input.focus();
+  autosizeTextarea(input);
+}
+
+function cancelEditDetail(item, field) {
+  fieldEl(item, field).innerHTML = detailFieldInnerHtml(field, item.dataset[field] || '');
+}
+
+async function saveDetail(item, field) {
+  const el = fieldEl(item, field);
+  const input = el.querySelector('.detail-input');
+  const value = input.value.trim();
+  input.disabled = true;
+  el.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    await patchMeta(item, { [field]: value });
+    el.innerHTML = detailFieldInnerHtml(field, value);
+    refreshDetailsToggle(item);
+    flashSaved(item);
+    applyFilter();
+  } catch (err) {
+    showError(`Failed to save ${DETAIL_FIELDS[field].toLowerCase()}: ` + err.message);
+    input.disabled = false;
+    el.querySelectorAll('button').forEach(b => b.disabled = false);
   }
 }
 
@@ -904,17 +1149,9 @@ async function patchTags(item, tags) {
   const area = item.querySelector('.tags-area');
   area.querySelectorAll('button, select').forEach(el => el.disabled = true);
   try {
-    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${item.dataset.id}`, {
-      method: 'PATCH',
-      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appProperties: { tags: serializeTags(tags) } }),
-    });
-    if (!resp.ok) throw new Error('Save failed (' + resp.status + ')');
-    item.dataset.tags = serializeTags(tags);
-    // Keep allFiles in sync so the derived tag set is correct and a later renderList()
-    // (e.g. re-sort) doesn't revert this edit from stale data.
-    const f = allFiles.find(f => f.id === item.dataset.id);
-    if (f) f.appProperties = { ...(f.appProperties || {}), tags: serializeTags(tags) };
+    // patchMeta repacks tags into the description and keeps allFiles in sync, so a
+    // later renderList() (e.g. re-sort) won't revert this edit from stale data.
+    await patchMeta(item, { tags });
     area.innerHTML = tagsAreaHtml(tags);
     flashSaved(item);
     renderTagBar();
@@ -929,7 +1166,7 @@ async function patchTags(item, tags) {
 // applied to any loaded file. There is no persistent tag registry.
 function availableTags() {
   const set = new Set();
-  for (const f of allFiles) for (const t of parseTags(f.appProperties?.tags)) set.add(t);
+  for (const f of allFiles) for (const t of fileMeta(f).tags) set.add(t);
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
@@ -964,7 +1201,7 @@ function applyFilter() {
   document.querySelectorAll('.file-item').forEach(item => {
     const tags = new Set(parseTags(item.dataset.tags));
     const tagMatch = [...activeFilters].every(t => tags.has(t));
-    const haystack = `${item.dataset.name || ''} ${item.dataset.desc || ''}`.toLowerCase();
+    const haystack = `${item.dataset.name || ''} ${item.dataset.desc || ''} ${item.dataset.equipment || ''} ${item.dataset.notes || ''}`.toLowerCase();
     const searchMatch = !q || haystack.includes(q);
     const sharedMatch = !sharedOnly || item.dataset.shared === '1';
     const matches = tagMatch && searchMatch && sharedMatch;
