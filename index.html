@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0050a0">
+  <meta name="description" content="Browse your Google Drive files">
+  <title>Inspired to Move Video Manager</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul>
+        <li>
+          <a href=".">
+            <img src="https://static.wixstatic.com/media/846e33_f67602de119948f29cde43a3dfa3d6f7~mv2.png/v1/fill/w_280,h_160,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/inspired_to_move_tranparent_v2.png"
+                 alt="Inspired to Move" class="site-logo">
+          </a>
+        </li>
+        <li class="app-title">Video Manager</li>
+      </ul>
+      <ul id="signed-in-area" hidden>
+        <li><small id="user-email"></small></li>
+        <li>
+          <details class="dropdown" id="folder-menu" hidden>
+            <summary class="folder-menu-trigger" aria-label="Folder options" title="Video folder options">&#9881;</summary>
+            <ul dir="rtl">
+              <li><small class="folder-menu-label">Folder: <span id="folder-menu-name"></span></small></li>
+              <li><a href="#" id="change-folder-btn">Change folder</a></li>
+            </ul>
+          </details>
+        </li>
+        <li>
+          <button id="sign-out-btn" class="secondary outline">Sign out</button>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <dialog id="folder-picker">
+    <article class="folder-picker-card">
+      <header>
+        <h3>Choose your video folder</h3>
+        <p class="folder-picker-sub">Pick the Drive folder that holds your class recordings.</p>
+      </header>
+      <nav id="folder-picker-crumbs" class="folder-picker-crumbs" aria-label="Folder path"></nav>
+      <ul id="folder-picker-list" class="folder-picker-list"></ul>
+      <p id="folder-picker-error" class="error" hidden role="alert"></p>
+      <footer>
+        <button id="folder-cancel-btn" class="secondary outline" hidden>Cancel</button>
+        <button id="folder-select-btn">Select this folder</button>
+      </footer>
+    </article>
+  </dialog>
+
+  <main class="container">
+    <section id="welcome-section">
+      <div class="welcome-card">
+        <img src="https://static.wixstatic.com/media/846e33_f67602de119948f29cde43a3dfa3d6f7~mv2.png/v1/fill/w_280,h_160,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/inspired_to_move_tranparent_v2.png"
+             alt="Inspired to Move" class="welcome-logo">
+        <h2>Video Manager</h2>
+        <p class="welcome-subtitle">Browse, tag, and share your class recordings — all in one place.</p>
+        <button id="sign-in-btn" class="google-signin" disabled>
+          <svg class="google-g" viewBox="0 0 18 18" aria-hidden="true" width="18" height="18">
+            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.05l3.01-2.33z"/>
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="file-section" hidden>
+      <p id="loading" hidden aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span> Loading your videos…
+      </p>
+      <p id="error-msg" hidden role="alert" class="error"></p>
+      <div id="list-toolbar" class="list-toolbar" hidden>
+        <input type="search" id="search-input" class="search-input" placeholder="Search by title or description…" aria-label="Search videos">
+        <label class="sort-control">
+          <span>Sort</span>
+          <select id="sort-select" aria-label="Sort videos">
+            <option value="name">Name (A–Z)</option>
+            <option value="filmed">Date filmed (newest)</option>
+            <option value="duration">Duration (longest)</option>
+            <option value="shared">Last shared (recent)</option>
+          </select>
+        </label>
+        <label class="shared-toggle">
+          <input type="checkbox" id="shared-only" role="switch">
+          <span>Shared only</span>
+        </label>
+      </div>
+      <div id="tag-filter-bar" class="tag-filter-bar" hidden></div>
+      <div id="non-video-warning" class="non-video-warning" hidden>
+        <span class="non-video-warning-icon" aria-hidden="true">⚠</span>
+        <span id="non-video-warning-text"></span>
+      </div>
+      <ul id="file-list" class="file-list"></ul>
+      <p id="empty-state" class="empty-state" hidden></p>
+    </section>
+  </main>
+
+<script src="config.js"></script>
+  <script src="app.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async onload="initGIS()"></script>
+</body>
+</html>
