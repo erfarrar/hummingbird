@@ -1,6 +1,6 @@
 # Tea
 
-A simple PWA that lists files in your Google Drive root folder.
+A simple web app that lists files in your Google Drive root folder.
 
 ## Setup
 
@@ -47,9 +47,3 @@ Then open `http://localhost:8000` in Chrome.
 1. Click **Sign in with Google** and complete the consent popup.
 2. The files in your Drive root folder appear, sorted by folders first then name.
 3. Click **Sign out** to clear the session.
-
-## PWA (Chromebook)
-
-The app registers a service worker that caches the app shell for offline use.
-In Chrome DevTools → Application → Manifest you should see the app is installable —
-on a Chromebook you can add it to the shelf.

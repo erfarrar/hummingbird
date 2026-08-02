@@ -1450,8 +1450,15 @@ if (folderCancelBtn) {
   folderCancelBtn.addEventListener('click', () => folderPicker.close());
 }
 
+// One-time cleanup for users who previously loaded the PWA version: unregister
+// any lingering service worker and clear its caches so stale assets aren't served.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(() => {});
-  });
+  navigator.serviceWorker.getRegistrations()
+    .then(registrations => registrations.forEach(r => r.unregister()))
+    .catch(() => {});
+}
+if ('caches' in window) {
+  caches.keys()
+    .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+    .catch(() => {});
 }
